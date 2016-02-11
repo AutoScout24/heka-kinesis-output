@@ -1,5 +1,5 @@
 package plugins
 
 import (
-	_ "github.com/crewton/heka-plugins/kinesis"
+	_ "github.com/MattLTW/heka-plugins/kinesis"
 )
