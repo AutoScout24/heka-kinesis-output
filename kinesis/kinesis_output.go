@@ -70,7 +70,6 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
 		msg, err = or.Encode(pack)
 		if err != nil {
 			or.LogError(fmt.Errorf("Error encoding message: %s", err))
-			pack.Recycle()
 			continue
 		}
 		pk = fmt.Sprintf("%d-%s", pack.Message.Timestamp, pack.Message.Hostname)
@@ -85,10 +84,8 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
 		_, err = k.Client.PutRecord(params)
 		if err != nil {
 			or.LogError(fmt.Errorf("Error pushing message to Kinesis: %s", err))
-			pack.Recycle()
 			continue
 		}
-		pack.Recycle()
 	}
 
 	return nil
