@@ -12,7 +12,7 @@ add_dependencies(aws-sdk-go go-ini)
 
 If you do not need all of the plugins from this repository, you can specify specific ones:
 ```bash
-add_external_plugin(git https://github.com/crewton/heka-plugins master kinesis)
+add_external_plugin(git https://github.com/MattLTW/heka-plugins master)
 ```
 
 ## kinesis
@@ -30,6 +30,24 @@ secret_access_key = "JKLjkldfjklsdfjkls+d8u8954hjkdfkfdfgfj"
 payload_only = false
 message_matcher = "TRUE"
 ```
+
+You are also able to batch your messages:
+
+```ini
+[KinesisOut]
+type = "KinesisOutput"
+region = "us-east-1"
+stream = "foobar"
+access_key_id = "AKIAJ89854WHHJDF8HJF"
+secret_access_key = "JKLjkldfjklsdfjkls+d8u8954hjkdfkfdfgfj"
+payload_only = false
+batch = true
+batch_num = 100
+message_matcher = "TRUE"
+```
+
+Batching is limited to 500 messages per batch. Each batch can be at most 5M and individual messages can be at most 1M. See:
+https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method
 
   [1]: https://hekad.readthedocs.org/en/latest/index.html
   [2]: https://aws.amazon.com/kinesis/
