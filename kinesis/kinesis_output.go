@@ -72,10 +72,11 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
 
     // configure defaults
     if (k.config.Batch) {
-
         if (k.config.BatchNum <= 0 || k.config.BatchNum > 500) {
             return fmt.Errorf("`batch_num` should be greater than 0 and no greater than 500. See: https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method")
         }
+
+        entries = []*kin.PutRecordsRequestEntry {}
     }
 
     for pack = range or.InChan() {
@@ -110,8 +111,7 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
                 err := req.Send()
 
                 // reset variants
-                iterCount = 0
-                entries = make([]*kin.PutRecordsRequestEntry, k.config.BatchNum)
+                entries = []*kin.PutRecordsRequestEntry {}
                 
                 if err != nil {
                     or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
