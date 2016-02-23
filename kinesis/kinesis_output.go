@@ -63,7 +63,6 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
         err        error
         params     *kin.PutRecordInput
         multParams *kin.PutRecordsInput
-        entry      *kin.PutRecordsRequestEntry
         entries    []*kin.PutRecordsRequestEntry
         iterCount  int
     )
@@ -109,7 +108,7 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
                     StreamName:   aws.String(k.config.Stream),
                 }
 
-                req, resp := k.Client.PutRecordsRequest(multParams)
+                req, _ := k.Client.PutRecordsRequest(multParams)
                 err := req.Send()
 
                 // reset variants
