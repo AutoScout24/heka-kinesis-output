@@ -75,8 +75,8 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
     // configure defaults
     if (k.config.Batch) {
 
-        if (k.config.BatchNum == nil) {
-            return fmt.Errorf("BatchNum should be defined.")
+        if (k.config.BatchNum == 0) {
+            return fmt.Errorf("BatchNum should be greater than 0.")
         }
 
         entries = make([]*kin.PutRecordsRequestEntry, k.config.BatchNum)
@@ -109,7 +109,7 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
                     StreamName:   aws.String(k.config.Stream),
                 }
 
-                req, resp := client.PutRecordRequest(multParams)
+                req, resp := k.Client.PutRecordRequest(multParams)
                 err := req.Send()
 
                 // reset variants
