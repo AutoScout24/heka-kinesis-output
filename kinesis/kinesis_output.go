@@ -78,6 +78,10 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
             return fmt.Errorf("BatchNum should be greater than 0.")
         }
 
+        if (k.config.BatchNum > 500) {
+            return fmt.Errorf("BatchNum should be greater no greater than 500. See: https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method")
+        }
+
         entries = make([]*kin.PutRecordsRequestEntry, k.config.BatchNum)
     }
 
