@@ -64,7 +64,6 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
         params     *kin.PutRecordInput
         multParams *kin.PutRecordsInput
         entries    []*kin.PutRecordsRequestEntry
-        iterCount  int
     )
 
     if or.Encoder() == nil {
@@ -74,15 +73,9 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
     // configure defaults
     if (k.config.Batch) {
 
-        if (k.config.BatchNum == 0) {
-            return fmt.Errorf("`batch_num` should be greater than 0.")
+        if (k.config.BatchNum <= 0 || k.config.BatchNum > 500) {
+            return fmt.Errorf("`batch_num` should be greater than 0 and no greater than 500. See: https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method")
         }
-
-        if (k.config.BatchNum > 500) {
-            return fmt.Errorf("`batch_num` should be greater no greater than 500. See: https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method")
-        }
-
-        entries = make([]*kin.PutRecordsRequestEntry, k.config.BatchNum)
     }
 
     for pack = range or.InChan() {
@@ -99,14 +92,15 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
 
         if (k.config.Batch) {
             // Add things to the current batch.
-            entries[iterCount] = &kin.PutRecordsRequestEntry{
+            entry := &kin.PutRecordsRequestEntry{
                 Data:            msg,
                 PartitionKey:    aws.String(pk),
             }
-            iterCount = iterCount + 1
+
+            entries = append(entries, entry)
 
             // if we have hit the batch limit send.
-            if (iterCount > k.config.BatchNum) {
+            if (len(entries) >= k.config.BatchNum) {
                 multParams = &kin.PutRecordsInput{
                     Records:      entries,
                     StreamName:   aws.String(k.config.Stream),
