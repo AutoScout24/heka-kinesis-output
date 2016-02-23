@@ -46,9 +46,9 @@ batch_num = 100
 message_matcher = "TRUE"
 ```
 
-Batching is limited to 500 messages per batch. Each batch can be at most 5M and individual messages can be at most 1M. See:
-https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method
+Batching is limited to 500 messages per batch. Each batch can be [at most 5M and individual messages can be at most 1M][4]. Please note that batching will only be sent once batch_num has been reached. Therefore it is only really applicable to high frequency messages.
 
   [1]: https://hekad.readthedocs.org/en/latest/index.html
   [2]: https://aws.amazon.com/kinesis/
   [3]: http://hekad.readthedocs.org/en/latest/installing.html#building-hekad-with-external-plugins
+  [4]: https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method
