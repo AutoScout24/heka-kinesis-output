@@ -22,7 +22,6 @@ type KinesisOutputConfig struct {
     SecretAccessKey string `toml:"secret_access_key"`
     Token           string `toml:"token"`
     PayloadOnly     bool   `toml:"payload_only"`
-    Batch           bool   `toml:"batch"`
     BatchNum        int    `toml:"batch_num"`
 }
 
@@ -55,6 +54,20 @@ func (k *KinesisOutput) Init(config interface{}) error {
     return nil
 }
 
+func (k *KinesisOutput) SendPayload(entries []*kin.PutRecordsRequestEntry) {
+    multParams = &kin.PutRecordsInput{
+        Records:      entries,
+        StreamName:   aws.String(k.config.Stream),
+    }
+
+    req, _ := k.Client.PutRecordsRequest(multParams)
+    err := req.Send()
+    
+    if err != nil {
+        or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
+    }
+}
+
 func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelper) error {
     var (
         pack       *pipeline.PipelinePack
@@ -71,73 +84,42 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
     }
 
     // configure defaults
-    if (k.config.Batch) {
-        if (k.config.BatchNum <= 0 || k.config.BatchNum > 500) {
-            return fmt.Errorf("`batch_num` should be greater than 0 and no greater than 500. See: https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method")
-        }
-
-        entries = []*kin.PutRecordsRequestEntry {}
+    if (k.config.BatchNum <= 0 || k.config.BatchNum > 500) {
+        return fmt.Errorf("`batch_num` should be greater than 0 and no greater than 500. See: https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method")
     }
+
+    entries = []*kin.PutRecordsRequestEntry {}
 
     for pack = range or.InChan() {
         // Run the body of the loop async.
-        go func (pack *pipeline.PipelinePack) {
-            msg, err = or.Encode(pack)
-            if err != nil {
-                or.LogError(fmt.Errorf("Error encoding message: %s", err))
-                pack.Recycle(nil)
-                continue
-            }
-            pk = fmt.Sprintf("%d-%s", pack.Message.Timestamp, pack.Message.Hostname)
-            if k.config.PayloadOnly {
-                msg = []byte(pack.Message.GetPayload())
-            }
-
-            if (k.config.Batch) {
-                // Add things to the current batch.
-                entry := &kin.PutRecordsRequestEntry{
-                    Data:            msg,
-                    PartitionKey:    aws.String(pk),
-                }
-
-                entries = append(entries, entry)
-
-                // if we have hit the batch limit send.
-                if (len(entries) >= k.config.BatchNum) {
-                    multParams = &kin.PutRecordsInput{
-                        Records:      entries,
-                        StreamName:   aws.String(k.config.Stream),
-                    }
-
-                    req, _ := k.Client.PutRecordsRequest(multParams)
-                    err := req.Send()
-
-                    // reset variants
-                    entries = []*kin.PutRecordsRequestEntry {}
-                    
-                    if err != nil {
-                        or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
-                        pack.Recycle(nil)
-                        continue
-                    }
-                }
-            } else {
-                // handle sequential input
-                params = &kin.PutRecordInput{
-                    Data:         msg,
-                    PartitionKey: aws.String(pk),
-                    StreamName:   aws.String(k.config.Stream),
-                }
-                _, err = k.Client.PutRecord(params)
-                if err != nil {
-                    or.LogError(fmt.Errorf("Sequence: Error pushing message to Kinesis: %s", err))
-                    pack.Recycle(nil)
-                    continue
-                }
-            }
-            
+        msg, err = or.Encode(pack)
+        if err != nil {
+            or.LogError(fmt.Errorf("Error encoding message: %s", err))
             pack.Recycle(nil)
-        } (pack)
+            continue
+        }
+
+        pk = fmt.Sprintf("%d-%s", pack.Message.Timestamp, pack.Message.Hostname)
+        if k.config.PayloadOnly {
+            msg = []byte(pack.Message.GetPayload())
+        }
+
+        // Add things to the current batch.
+        entry := &kin.PutRecordsRequestEntry{
+            Data:            msg,
+            PartitionKey:    aws.String(pk),
+        }
+
+        entries = append(entries, entry)
+
+        // if we have hit the batch limit send.
+        if (len(entries) >= k.config.BatchNum) {
+            clonedEntries := append([]*kin.PutRecordsRequestEntry(nil), entries)
+            entries = []*kin.PutRecordsRequestEntry {}
+            go SendPayload(clonedEntries)
+        }   
+
+        pack.Recycle(nil)
     }
 
     return nil
