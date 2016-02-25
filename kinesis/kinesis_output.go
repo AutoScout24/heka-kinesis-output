@@ -54,8 +54,8 @@ func (k *KinesisOutput) Init(config interface{}) error {
     return nil
 }
 
-func (k *KinesisOutput) SendPayload(entries []*kin.PutRecordsRequestEntry) {
-    multParams = &kin.PutRecordsInput{
+func (k *KinesisOutput) SendPayload(entries []*kin.PutRecordsRequestEntry, or pipeline.OutputRunner) error {
+    multParams := &kin.PutRecordsInput{
         Records:      entries,
         StreamName:   aws.String(k.config.Stream),
     }
@@ -75,7 +75,6 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
         pk         string
         err        error
         params     *kin.PutRecordInput
-        multParams *kin.PutRecordsInput
         entries    []*kin.PutRecordsRequestEntry
     )
 
@@ -114,9 +113,10 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
 
         // if we have hit the batch limit send.
         if (len(entries) >= k.config.BatchNum) {
-            clonedEntries := append([]*kin.PutRecordsRequestEntry(nil), entries)
+            clonedEntries := make([]*kin.PutRecordsRequestEntry, len(entries))
+            copy(clonedEntries, entries)
             entries = []*kin.PutRecordsRequestEntry {}
-            go SendPayload(clonedEntries)
+            go SendPayload(clonedEntries, or)
         }   
 
         pack.Recycle(nil)
