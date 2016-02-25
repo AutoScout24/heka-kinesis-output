@@ -125,6 +125,8 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     // do reporting and tidy up
     atomic.AddInt64(&k.processMessageCount, 1)
     pack.Recycle(nil)
+
+    return nil
 }
 
 func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelper) error {
