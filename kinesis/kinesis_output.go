@@ -75,7 +75,6 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
         msg        []byte
         pk         string
         err        error
-        params     *kin.PutRecordInput
         entries    []*kin.PutRecordsRequestEntry
     )
 
