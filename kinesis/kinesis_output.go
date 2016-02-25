@@ -117,7 +117,7 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
             clonedEntries := make([]*kin.PutRecordsRequestEntry, len(entries))
             copy(clonedEntries, entries)
             entries = []*kin.PutRecordsRequestEntry {}
-            
+
             // Run the put async
             go func (entries []*kin.PutRecordsRequestEntry) {
                 multParams := &kin.PutRecordsInput{
@@ -131,7 +131,6 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
                 if err != nil {
                     or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
                 }
-                return nil
             } (clonedEntries)
         }   
 
