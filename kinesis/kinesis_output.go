@@ -81,7 +81,7 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
 
     for pack = range or.InChan() {
         // Run the body of the loop async.
-        go func (pack *PipelinePack) {
+        go func (pack *pipeline.PipelinePack) {
             msg, err = or.Encode(pack)
             if err != nil {
                 or.LogError(fmt.Errorf("Error encoding message: %s", err))
