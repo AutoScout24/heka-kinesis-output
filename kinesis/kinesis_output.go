@@ -79,7 +79,7 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
     if err != nil {
         or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
         atomic.AddInt64(&k.batchesFailed, 1)
-        atomic.AddInt64(&k.dropMessageCount, int64(len(entries))
+        atomic.AddInt64(&k.dropMessageCount, int64(len(entries)))
     }
 
     return nil
