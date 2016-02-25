@@ -22,6 +22,7 @@ type KinesisOutput struct {
     entries             []*kin.PutRecordsRequestEntry {}
     config              *KinesisOutputConfig
     Client              *kin.Kinesis
+    awsConf             *aws.Config
 }
 
 type KinesisOutputConfig struct {
@@ -44,9 +45,6 @@ func (k *KinesisOutput) ConfigStruct() interface{} {
     }
 }
 
-
-var awsConf aws.Config
-
 func (k *KinesisOutput) Init(config interface{}) error {
     var creds *credentials.Credentials
 
@@ -58,11 +56,11 @@ func (k *KinesisOutput) Init(config interface{}) error {
     } else {
         creds = credentials.NewEC2RoleCredentials(&http.Client{Timeout: 10 * time.Second}, "", 0)
     }
-    awsConf = &aws.Config{
+    k.awsConf = &aws.Config{
         Region:      k.config.Region,
         Credentials: creds,
     }
-    k.Client = kin.New(awsConf)
+    k.Client = kin.New(k.awsConf)
 
     return nil
 }
