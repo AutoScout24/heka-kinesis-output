@@ -79,21 +79,24 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
     if err != nil {
         or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
         atomic.AddInt64(&k.batchesFailed, 1)
-        atomic.AddInt64(&t.dropMessageCount, len(entries))
+        atomic.AddInt64(&k.dropMessageCount, int64(len(entries))
     }
+
+    return nil
 }
 
 func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.PipelinePack) error {
+
     // encode the packages.
-    msg, err = or.Encode(pack)
+    msg, err := or.Encode(pack)
     if err != nil {
         or.LogError(fmt.Errorf("Error encoding message: %s", err))
         pack.Recycle(nil)
-        continue
+        return nil
     }
 
     // define a Partition Key
-    pk = fmt.Sprintf("%d-%s", pack.Message.Timestamp, pack.Message.Hostname)
+    pk := fmt.Sprintf("%d-%s", pack.Message.Timestamp, pack.Message.Hostname)
 
     // If we only care about the Payload...
     if k.config.PayloadOnly {
@@ -127,9 +130,6 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
 func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelper) error {
     var (
         pack       *pipeline.PipelinePack
-        msg        []byte
-        pk         string
-        err        error
     )
 
     if or.Encoder() == nil {
