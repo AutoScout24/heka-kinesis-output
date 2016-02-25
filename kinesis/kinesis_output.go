@@ -80,61 +80,64 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
     }
 
     for pack = range or.InChan() {
-        msg, err = or.Encode(pack)
-        if err != nil {
-            or.LogError(fmt.Errorf("Error encoding message: %s", err))
-            pack.Recycle(nil)
-            continue
-        }
-        pk = fmt.Sprintf("%d-%s", pack.Message.Timestamp, pack.Message.Hostname)
-        if k.config.PayloadOnly {
-            msg = []byte(pack.Message.GetPayload())
-        }
-
-        if (k.config.Batch) {
-            // Add things to the current batch.
-            entry := &kin.PutRecordsRequestEntry{
-                Data:            msg,
-                PartitionKey:    aws.String(pk),
+        // Run the body of the loop async.
+        go func (pack *PipelinePack) {
+            msg, err = or.Encode(pack)
+            if err != nil {
+                or.LogError(fmt.Errorf("Error encoding message: %s", err))
+                pack.Recycle(nil)
+                continue
+            }
+            pk = fmt.Sprintf("%d-%s", pack.Message.Timestamp, pack.Message.Hostname)
+            if k.config.PayloadOnly {
+                msg = []byte(pack.Message.GetPayload())
             }
 
-            entries = append(entries, entry)
-
-            // if we have hit the batch limit send.
-            if (len(entries) >= k.config.BatchNum) {
-                multParams = &kin.PutRecordsInput{
-                    Records:      entries,
-                    StreamName:   aws.String(k.config.Stream),
+            if (k.config.Batch) {
+                // Add things to the current batch.
+                entry := &kin.PutRecordsRequestEntry{
+                    Data:            msg,
+                    PartitionKey:    aws.String(pk),
                 }
 
-                req, _ := k.Client.PutRecordsRequest(multParams)
-                err := req.Send()
+                entries = append(entries, entry)
 
-                // reset variants
-                entries = []*kin.PutRecordsRequestEntry {}
-                
+                // if we have hit the batch limit send.
+                if (len(entries) >= k.config.BatchNum) {
+                    multParams = &kin.PutRecordsInput{
+                        Records:      entries,
+                        StreamName:   aws.String(k.config.Stream),
+                    }
+
+                    req, _ := k.Client.PutRecordsRequest(multParams)
+                    err := req.Send()
+
+                    // reset variants
+                    entries = []*kin.PutRecordsRequestEntry {}
+                    
+                    if err != nil {
+                        or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
+                        pack.Recycle(nil)
+                        continue
+                    }
+                }
+            } else {
+                // handle sequential input
+                params = &kin.PutRecordInput{
+                    Data:         msg,
+                    PartitionKey: aws.String(pk),
+                    StreamName:   aws.String(k.config.Stream),
+                }
+                _, err = k.Client.PutRecord(params)
                 if err != nil {
-                    or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
+                    or.LogError(fmt.Errorf("Sequence: Error pushing message to Kinesis: %s", err))
                     pack.Recycle(nil)
                     continue
                 }
             }
-        } else {
-            // handle sequential input
-            params = &kin.PutRecordInput{
-                Data:         msg,
-                PartitionKey: aws.String(pk),
-                StreamName:   aws.String(k.config.Stream),
-            }
-            _, err = k.Client.PutRecord(params)
-            if err != nil {
-                or.LogError(fmt.Errorf("Sequence: Error pushing message to Kinesis: %s", err))
-                pack.Recycle(nil)
-                continue
-            }
-        }
-        
-        pack.Recycle(nil)
+            
+            pack.Recycle(nil)
+        } (pack)
     }
 
     return nil
