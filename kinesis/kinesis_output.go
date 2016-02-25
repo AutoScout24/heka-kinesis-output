@@ -19,7 +19,7 @@ type KinesisOutput struct {
     processMessageCount int64
     dropMessageCount    int64
     reportLock          sync.Mutex
-    entries             []*kin.PutRecordsRequestEntry {}
+    entries             []*kin.PutRecordsRequestEntry
     config              *KinesisOutputConfig
     Client              *kin.Kinesis
     awsConf             *aws.Config
@@ -65,21 +65,6 @@ func (k *KinesisOutput) Init(config interface{}) error {
     return nil
 }
 
-func (k *KinesisOutput) SendPayload(entries []*kin.PutRecordsRequestEntry, or pipeline.OutputRunner) error {
-    multParams := &kin.PutRecordsInput{
-        Records:      entries,
-        StreamName:   aws.String(k.config.Stream),
-    }
-
-    req, _ := k.Client.PutRecordsRequest(multParams)
-    err := req.Send()
-    
-    if err != nil {
-        or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
-    }
-    return nil
-}
-
 func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.PutRecordsRequestEntry) error {
     multParams := &kin.PutRecordsInput{
         Records:      entries,
@@ -98,58 +83,67 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
     }
 }
 
+func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.PipelinePack) error {
+    // encode the packages.
+    msg, err = or.Encode(pack)
+    if err != nil {
+        or.LogError(fmt.Errorf("Error encoding message: %s", err))
+        pack.Recycle(nil)
+        continue
+    }
+
+    // define a Partition Key
+    pk = fmt.Sprintf("%d-%s", pack.Message.Timestamp, pack.Message.Hostname)
+
+    // If we only care about the Payload...
+    if k.config.PayloadOnly {
+        msg = []byte(pack.Message.GetPayload())
+    }
+
+    // Add things to the current batch.
+    entry := &kin.PutRecordsRequestEntry{
+        Data:            msg,
+        PartitionKey:    aws.String(pk),
+    }
+
+    k.entries = append(k.entries, entry)
+
+    // if we have hit the batch limit send.
+    if (len(k.entries) >= k.config.BatchNum) {
+        // clone the entries so the output can happen
+        clonedEntries := make([]*kin.PutRecordsRequestEntry, len(k.entries))
+        copy(clonedEntries, k.entries)
+        k.entries = []*kin.PutRecordsRequestEntry {}
+
+        // Run the put async
+        go k.SendEntries(or, clonedEntries)
+    }
+
+    // do reporting and tidy up
+    atomic.AddInt64(&k.processMessageCount, 1)
+    pack.Recycle(nil)
+}
+
 func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelper) error {
     var (
         pack       *pipeline.PipelinePack
         msg        []byte
         pk         string
         err        error
-        entries    []*kin.PutRecordsRequestEntry
     )
 
     if or.Encoder() == nil {
         return fmt.Errorf("Encoder required.")
     }
 
-    // configure defaults
+    // check values
     if (k.config.BatchNum <= 0 || k.config.BatchNum > 500) {
         return fmt.Errorf("`batch_num` should be greater than 0 and no greater than 500. See: https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method")
     }
 
+    // handle packages
     for pack = range or.InChan() {
-        // Run the body of the loop async.
-        msg, err = or.Encode(pack)
-        if err != nil {
-            or.LogError(fmt.Errorf("Error encoding message: %s", err))
-            pack.Recycle(nil)
-            continue
-        }
-
-        pk = fmt.Sprintf("%d-%s", pack.Message.Timestamp, pack.Message.Hostname)
-        if k.config.PayloadOnly {
-            msg = []byte(pack.Message.GetPayload())
-        }
-
-        // Add things to the current batch.
-        entry := &kin.PutRecordsRequestEntry{
-            Data:            msg,
-            PartitionKey:    aws.String(pk),
-        }
-
-        entries = append(entries, entry)
-
-        // if we have hit the batch limit send.
-        if (len(entries) >= k.config.BatchNum) {
-            clonedEntries := make([]*kin.PutRecordsRequestEntry, len(k.entries))
-            copy(clonedEntries, k.entries)
-            k.entries = []*kin.PutRecordsRequestEntry {}
-
-            // Run the put async
-            go k.SendEntries(or, clonedEntries)
-        }
-
-        atomic.AddInt64(&k.processMessageCount, 1)
-        pack.Recycle(nil)
+        k.HandlePackage(or, pack)
     }
 
     return nil
