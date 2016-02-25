@@ -66,6 +66,7 @@ func (k *KinesisOutput) SendPayload(entries []*kin.PutRecordsRequestEntry, or pi
     if err != nil {
         or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
     }
+    return nil
 }
 
 func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelper) error {
@@ -116,7 +117,22 @@ func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelp
             clonedEntries := make([]*kin.PutRecordsRequestEntry, len(entries))
             copy(clonedEntries, entries)
             entries = []*kin.PutRecordsRequestEntry {}
-            go SendPayload(clonedEntries, or)
+            
+            // Run the put async
+            go func (entries []*kin.PutRecordsRequestEntry) {
+                multParams := &kin.PutRecordsInput{
+                    Records:      entries,
+                    StreamName:   aws.String(k.config.Stream),
+                }
+
+                req, _ := k.Client.PutRecordsRequest(multParams)
+                err := req.Send()
+                
+                if err != nil {
+                    or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
+                }
+                return nil
+            } (clonedEntries)
         }   
 
         pack.Recycle(nil)
