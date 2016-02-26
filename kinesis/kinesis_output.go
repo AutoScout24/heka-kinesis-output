@@ -11,6 +11,7 @@ import (
     "time"
     "sync"
     "sync/atomic"
+    "math/rand"
 )
 
 type KinesisOutput struct {
@@ -96,7 +97,7 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     }
 
     // define a Partition Key
-    pk := fmt.Sprintf("%d-%s", pack.Message.Timestamp, pack.Message.Hostname)
+    pk := fmt.Sprintf("%d-%s-%X", pack.Message.Timestamp, pack.Message.Hostname, rand.Int())
 
     // If we only care about the Payload...
     if k.config.PayloadOnly {
