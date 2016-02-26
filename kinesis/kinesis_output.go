@@ -90,9 +90,10 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     // encode the packages.
     msg, err := or.Encode(pack)
     if err != nil {
-        or.LogError(fmt.Errorf("Error encoding message: %s", err))
+        errOut := fmt.Errorf("Error encoding message: %s", err)
+        or.LogError(errOut)
         pack.Recycle(nil)
-        return nil
+        return errOut
     }
 
     // define a Partition Key
@@ -104,7 +105,7 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     }
 
     // Add things to the current batch.
-    entry := &kin.PutRecordsRequestEntry{
+    entry := &kin.PutRecordsRequestEntry {
         Data:            msg,
         PartitionKey:    aws.String(pk),
     }
@@ -130,9 +131,7 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
 }
 
 func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelper) error {
-    var (
-        pack       *pipeline.PipelinePack
-    )
+    var pack *pipeline.PipelinePack
 
     if or.Encoder() == nil {
         return fmt.Errorf("Encoder required.")
@@ -166,4 +165,16 @@ func (k *KinesisOutput) ReportMsg(msg *message.Message) error {
 
 func init() {
     pipeline.RegisterPlugin("KinesisOutput", func() interface{} { return new(KinesisOutput) })
+}
+
+func (k *KinesisOutput) CleanupForRestart() {
+    k.reportLock.Lock()
+    defer k.reportLock.Unlock()
+
+    atomic.StoreInt64(&k.processMessageCount, 0)
+    atomic.StoreInt64(&k.dropMessageCount, 0)
+    atomic.StoreInt64(&k.batchesSent, 0)
+    atomic.StoreInt64(&k.batchesFailed, 0)
+
+    k.entries = []*kin.PutRecordsRequestEntry {}
 }
