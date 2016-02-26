@@ -71,9 +71,8 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
         StreamName:   aws.String(k.config.Stream),
     }
 
-    req, _ := k.Client.PutRecordsRequest(multParams)
+    req, err := k.Client.PutRecords(multParams)
     atomic.AddInt64(&k.batchesSent, 1)
-    err := req.Send()
     
     // Update statistics & handle errors
     if err != nil {
