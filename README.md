@@ -18,7 +18,7 @@ add_external_plugin(git https://github.com/MattLTW/heka-plugins master)
 ## Kinesis
 This output will put your [heka][1] messages and put them into a [Kinesis][2] stream. It will do this in batches.
 
-This plugin batches in two stages. First it batches multiple messages in a single Kinesis record entry. Each Message will be placed into a JSON array inside a single record. The size of the array depends upon the `kinesis_record_size` parameter.
+This plugin batches in two stages. First it batches multiple messages in a single Kinesis record entry. Each Message will be placed into a JSON array inside a single record. The size of the array depends upon the `kinesis_record_size` parameter. Next it will batch multiple Record Entries in to a single Kinesis.PutRecords command.
 
 > **Note:** This plugin expects that your message encoder, encodes as JSON.
 
