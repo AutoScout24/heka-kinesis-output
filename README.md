@@ -1,4 +1,4 @@
-# heka-plugins
+# heka-kinesis-output
 
 ## Installation
 Follow the [guide from the heka documentation to build with external plugins][3].
