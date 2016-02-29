@@ -48,6 +48,7 @@ type KinesisOutputConfig struct {
     BackoffIncrement  string `toml:"backoff_increment"`
     MaxRetries        int    `toml:"max_retries"`
     KinesisShardCount int    `toml:"kinesis_shard_count"`
+    KinesisRecordSize int    `toml:"kinesis_record_size"`
 }
 
 func (k *KinesisOutput) ConfigStruct() interface{} {
@@ -84,11 +85,14 @@ func (k *KinesisOutput) InitAWS() *aws.Config {
 func (k *KinesisOutput) Init(config interface{}) error {
     k.config = config.(*KinesisOutputConfig)
 
-    if (k.config.BackoffIncrement == nil) {
+    if (k.config.BackoffIncrement == "") {
         k.config.BackoffIncrement = "250ms"
     }
-
-    k.backoffIncrement = time.ParseDuration(k.config.BackoffIncrement)
+    duration, err := time.ParseDuration(k.config.BackoffIncrement)
+    if (err != nil) {
+        return fmt.Errorf("Unable to parse backoff_increment as a valid duration. See https://golang.org/pkg/time/#ParseDuration. Err: %s", err)
+    }
+    k.backoffIncrement = duration
 
     if (k.config.MaxRetries == 0) {
         k.config.MaxRetries = 30
@@ -98,8 +102,15 @@ func (k *KinesisOutput) Init(config interface{}) error {
         return fmt.Errorf("Please supply the value kinesis_shard_count")
     }
 
+    if (k.config.KinesisRecordSize > (1000 * 1024)) {
+        return fmt.Errorf("Your kinesis_record_size must be less than 1M. See https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method")
+    } else if (k.config.KinesisRecordSize == 0) {
+        k.config.KinesisRecordSize = (100 * 1024) // 100 KB
+    }
+
     k.KINESIS_SHARDS = k.config.KinesisShardCount
-    k.KINESIS_RECORD_SIZE = (100 * 1024) // 100 KB
+    k.KINESIS_RECORD_SIZE = k.config.KinesisRecordSize
+
     k.KINESIS_SHARD_CAPACITY = k.KINESIS_SHARDS * 1024 * 1024
     k.KINESIS_PUT_RECORDS_SIZE_LIMIT = int(math.Min(float64(k.KINESIS_SHARD_CAPACITY), 5 * 1024 * 1024)) // 5 MB;
     k.KINESIS_PUT_RECORDS_BATCH_SIZE = int(math.Max(1, math.Floor(float64(k.KINESIS_PUT_RECORDS_SIZE_LIMIT / k.KINESIS_RECORD_SIZE)) - 1))
@@ -130,7 +141,7 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
         atomic.AddInt64(&k.batchesFailed, 1)
         atomic.AddInt64(&k.dropMessageCount, int64(len(entries)))
 
-        if (retries <= k.config.MaxRetries) {
+        if (retries <= k.config.MaxRetries || k.config.MaxRetries == -1) {
             atomic.AddInt64(&k.retryCount, 1)
             time.Sleep(time.Millisecond * time.Duration(backoff))
             k.SendEntries(or, entries, backoff + k.backoffIncrement, retries + 1)
