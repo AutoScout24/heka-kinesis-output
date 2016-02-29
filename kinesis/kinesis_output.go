@@ -22,6 +22,7 @@ type KinesisOutput struct {
     recordCount         int64
     retryCount          int64
     reportLock          sync.Mutex
+    flushLock           sync.Mutex
     config              *KinesisOutputConfig
     Client              *kin.Kinesis
     awsConf             *aws.Config
@@ -57,6 +58,11 @@ const KINESIS_SHARD_CAPACITY = KINESIS_SHARDS * 1024 * 1024
 const KINESIS_PUT_RECORDS_SIZE_LIMIT = math.min(KINESIS_SHARD_CAPACITY, 5 * 1024 * 1024) // 5 MB;
 const KINESIS_PUT_RECORDS_BATCH_SIZE = math.max(1, math.floor(KINESIS_PUT_RECORDS_SIZE_LIMIT / KINESIS_RECORD_SIZE) - 1)
 // const KINESIS_PARALLEL_PUT_LIMIT = Math.floor(KINESIS_SHARD_CAPACITY / KINESIS_PUT_RECORDS_SIZE_LIMIT);
+
+
+func init() {
+    pipeline.RegisterPlugin("KinesisOutput", func() interface{} { return new(KinesisOutput) })
+}
 
 func (k *KinesisOutput) InitAWS() aws.Config {
 
@@ -104,7 +110,7 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
         if (retries <= MAX_RETRIES) {
             atomic.AddInt64(&k.retryCount, 1)
             time.Sleep(time.Millisecond * backoff)
-            SendEntries(or, entries, backoff + BACKOFF_INCREMENT, retries + 1)    
+            k.SendEntries(or, entries, backoff + BACKOFF_INCREMENT, retries + 1)    
         } else {
             or.LogError(fmt.Errorf("Batch: Hit max retries when attempting to send data"))
         }
@@ -113,6 +119,15 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
     atomic.AddInt64(&k.batchesSent, 1)
 
     return nil
+}
+
+func (k *KinesisOutput) PrepareSend(entries []*kin.PutRecordsRequestEntry) {
+    // clone the entries so the output can happen
+    clonedEntries := make([]*kin.PutRecordsRequestEntry, len(entries))
+    copy(clonedEntries, entries)
+
+    // Run the put async
+    go k.SendEntries(or, clonedEntries, 0, 0)
 }
 
 func (k *KinesisOutput) BundleMessage(msg []byte) kin.PutRecordsRequestEntry {
@@ -127,19 +142,13 @@ func (k *KinesisOutput) BundleMessage(msg []byte) kin.PutRecordsRequestEntry {
 }
 
 func (k *KinesisOutput) AddToRecordBatch(msg []byte) {
-    entry := BundleMessage(msg)
+    entry := k.BundleMessage(msg)
 
     tmp := append(k.batchedEntries, entry)
 
     // if we have hit the batch limit, send.
     if (len(tmp) > KINESIS_PUT_RECORDS_BATCH_SIZE) {
-        // clone the entries so the output can happen
-        clonedEntries := make([]*kin.PutRecordsRequestEntry, len(k.batchedEntries))
-        copy(clonedEntries, k.batchedEntries)
-
-        // Run the put async
-        go k.SendEntries(or, clonedEntries, 0, 0)
-
+        k.PrepareSend(k.batchedEntries)
         k.batchedEntries = []*kin.PutRecordsRequestEntry { entry }
     } else {
         k.batchedEntries = tmp
@@ -150,6 +159,8 @@ func (k *KinesisOutput) AddToRecordBatch(msg []byte) {
 }
 
 func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.PipelinePack) error {
+    k.flushLock.Lock()
+    defer k.flushLock.Unlock()
 
     // encode the packages.
     msg, err := or.Encode(pack)
@@ -177,7 +188,7 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     if (len(tmp) > KINESIS_RECORD_SIZE) {
         // add the existing data to the output batch
         array := append([]byte("["), k.batchedData, []byte("]"))
-        AddToRecordBatch(array)
+        k.AddToRecordBatch(array)
 
         // update the batched data to only contain the current message.
         k.batchedData = msg
@@ -225,18 +236,20 @@ func (k *KinesisOutput) ReportMsg(msg *message.Message) error {
     return nil
 }
 
-func init() {
-    pipeline.RegisterPlugin("KinesisOutput", func() interface{} { return new(KinesisOutput) })
-}
+func (k *KinesisOutput) FlushData() {
+    k.flushLock.Lock()
+    defer k.flushLock.Unlock()
 
-// func (k *KinesisOutput) FlushData() {
-//     BundleMessage(k.batchedData)
-// }
+    array := append([]byte("["), k.batchedData, []byte("]"))
+    entry := k.BundleMessage(array)
+
+    k.PrepareSend(append(k.batchedEntries, entry))
+}
 
 func (k *KinesisOutput) CleanupForRestart() {
 
     // force flush all messages in memory.
-    //SendEntries(nil, k.batchedEntries)
+    k.FlushData()
 
     k.batchedData = []byte {}
     k.batchedEntries = []*kin.PutRecordsRequestEntry {}
