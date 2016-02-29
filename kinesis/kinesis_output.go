@@ -143,7 +143,7 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
 
         if (retries <= k.config.MaxRetries || k.config.MaxRetries == -1) {
             atomic.AddInt64(&k.retryCount, 1)
-            time.Sleep(backoff + k.backoffIncrement))
+            time.Sleep(backoff + k.backoffIncrement)
             k.SendEntries(or, entries, backoff + k.backoffIncrement, retries + 1)
         } else {
             if (or != nil) {
