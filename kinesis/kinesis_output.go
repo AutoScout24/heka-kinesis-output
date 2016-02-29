@@ -30,6 +30,7 @@ type KinesisOutput struct {
     awsConf                         *aws.Config
     batchedData                     []byte
     batchedEntries                  []*kin.PutRecordsRequestEntry
+    backoffIncrement                time.Duration
     KINESIS_SHARDS                  int
     KINESIS_RECORD_SIZE             int
     KINESIS_SHARD_CAPACITY          int
@@ -44,7 +45,7 @@ type KinesisOutputConfig struct {
     SecretAccessKey   string `toml:"secret_access_key"`
     Token             string `toml:"token"`
     PayloadOnly       bool   `toml:"payload_only"`
-    BackoffIncrement  int    `toml:"backoff_increment"`
+    BackoffIncrement  string `toml:"backoff_increment"`
     MaxRetries        int    `toml:"max_retries"`
     KinesisShardCount int    `toml:"kinesis_shard_count"`
 }
@@ -83,12 +84,18 @@ func (k *KinesisOutput) InitAWS() *aws.Config {
 func (k *KinesisOutput) Init(config interface{}) error {
     k.config = config.(*KinesisOutputConfig)
 
-    if (k.config.BackoffIncrement == 0) {
-        k.config.BackoffIncrement = 250
+    if (k.config.BackoffIncrement == nil) {
+        k.config.BackoffIncrement = "250ms"
     }
+
+    k.backoffIncrement = time.ParseDuration(k.config.BackoffIncrement)
 
     if (k.config.MaxRetries == 0) {
         k.config.MaxRetries = 30
+    }
+
+    if (k.config.KinesisShardCount == 0) {
+        return fmt.Errorf("Please supply the value kinesis_shard_count")
     }
 
     k.KINESIS_SHARDS = k.config.KinesisShardCount
@@ -126,7 +133,7 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
         if (retries <= k.config.MaxRetries) {
             atomic.AddInt64(&k.retryCount, 1)
             time.Sleep(time.Millisecond * time.Duration(backoff))
-            k.SendEntries(or, entries, backoff + k.config.BackoffIncrement, retries + 1)
+            k.SendEntries(or, entries, backoff + k.backoffIncrement, retries + 1)
         } else {
             if (or != nil) {
                 or.LogError(fmt.Errorf("Batch: Hit max retries when attempting to send data"))
