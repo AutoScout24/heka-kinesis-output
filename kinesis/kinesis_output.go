@@ -93,9 +93,9 @@ func (k *KinesisOutput) Init(config interface{}) error {
 
     k.KINESIS_SHARDS = k.config.KinesisShardCount
     k.KINESIS_RECORD_SIZE = (100 * 1024) // 100 KB
-    k.KINESIS_SHARD_CAPACITY = KINESIS_SHARDS * 1024 * 1024
-    k.KINESIS_PUT_RECORDS_SIZE_LIMIT = math.min(KINESIS_SHARD_CAPACITY, 5 * 1024 * 1024) // 5 MB;
-    k.KINESIS_PUT_RECORDS_BATCH_SIZE = math.max(1, math.floor(KINESIS_PUT_RECORDS_SIZE_LIMIT / KINESIS_RECORD_SIZE) - 1)
+    k.KINESIS_SHARD_CAPACITY = k.KINESIS_SHARDS * 1024 * 1024
+    k.KINESIS_PUT_RECORDS_SIZE_LIMIT = math.Min(k.KINESIS_SHARD_CAPACITY, 5 * 1024 * 1024) // 5 MB;
+    k.KINESIS_PUT_RECORDS_BATCH_SIZE = math.Max(1, math.Floor(k.KINESIS_PUT_RECORDS_SIZE_LIMIT / k.KINESIS_RECORD_SIZE) - 1)
 
     k.batchedData = []byte {}
     k.batchedEntries = []*kin.PutRecordsRequestEntry {}
@@ -139,7 +139,7 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
     return nil
 }
 
-func (k *KinesisOutput) PrepareSend(or pipeline.OutputRunner, *entries []*kin.PutRecordsRequestEntry) {
+func (k *KinesisOutput) PrepareSend(or pipeline.OutputRunner, entries []*kin.PutRecordsRequestEntry) {
     // clone the entries so the output can happen
     clonedEntries := make([]*kin.PutRecordsRequestEntry, len(entries))
     copy(clonedEntries, entries)
