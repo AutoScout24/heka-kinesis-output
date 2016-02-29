@@ -94,8 +94,8 @@ func (k *KinesisOutput) Init(config interface{}) error {
     k.KINESIS_SHARDS = k.config.KinesisShardCount
     k.KINESIS_RECORD_SIZE = (100 * 1024) // 100 KB
     k.KINESIS_SHARD_CAPACITY = k.KINESIS_SHARDS * 1024 * 1024
-    k.KINESIS_PUT_RECORDS_SIZE_LIMIT = math.Min(k.KINESIS_SHARD_CAPACITY, 5 * 1024 * 1024) // 5 MB;
-    k.KINESIS_PUT_RECORDS_BATCH_SIZE = math.Max(1, math.Floor(k.KINESIS_PUT_RECORDS_SIZE_LIMIT / k.KINESIS_RECORD_SIZE) - 1)
+    k.KINESIS_PUT_RECORDS_SIZE_LIMIT = int(math.Min(float64(k.KINESIS_SHARD_CAPACITY), 5 * 1024 * 1024)) // 5 MB;
+    k.KINESIS_PUT_RECORDS_BATCH_SIZE = int(math.Max(1, math.Floor(float64(k.KINESIS_PUT_RECORDS_SIZE_LIMIT / k.KINESIS_RECORD_SIZE)) - 1))
 
     k.batchedData = []byte {}
     k.batchedEntries = []*kin.PutRecordsRequestEntry {}
@@ -159,14 +159,14 @@ func (k *KinesisOutput) BundleMessage(msg []byte) *kin.PutRecordsRequestEntry {
     }
 }
 
-func (k *KinesisOutput) AddToRecordBatch(msg []byte) {
+func (k *KinesisOutput) AddToRecordBatch(or pipeline.OutputRunner, msg []byte) {
     entry := k.BundleMessage(msg)
 
     tmp := append(k.batchedEntries, entry)
 
     // if we have hit the batch limit, send.
     if (len(tmp) > k.KINESIS_PUT_RECORDS_BATCH_SIZE) {
-        k.PrepareSend(k.batchedEntries)
+        k.PrepareSend(or, k.batchedEntries)
         k.batchedEntries = []*kin.PutRecordsRequestEntry { entry }
     } else {
         k.batchedEntries = tmp
@@ -197,7 +197,7 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     var tmp []byte
     // if we already have data then we should append.
     if (len(k.batchedData) > 0) {
-        tmp = append(k.batchedData, []byte(","), msg)
+        tmp = append(k.batchedData, byte(","), msg...)
     } else {
         tmp = msg
     }
@@ -205,8 +205,8 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     // if we can't fit the data in this record
     if (len(tmp) > k.KINESIS_RECORD_SIZE) {
         // add the existing data to the output batch
-        array := append([]byte("["), k.batchedData, []byte("]"))
-        k.AddToRecordBatch(array)
+        array := append(append([]byte("["), k.batchedData...), byte("]"))
+        k.AddToRecordBatch(or, array)
 
         // update the batched data to only contain the current message.
         k.batchedData = msg
@@ -261,7 +261,7 @@ func (k *KinesisOutput) FlushData() {
     array := append([]byte("["), k.batchedData, []byte("]"))
     entry := k.BundleMessage(array)
 
-    k.PrepareSend(append(k.batchedEntries, entry))
+    k.PrepareSend(nil, append(k.batchedEntries, entry))
 }
 
 func (k *KinesisOutput) CleanupForRestart() {
