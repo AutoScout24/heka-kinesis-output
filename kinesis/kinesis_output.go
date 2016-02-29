@@ -12,31 +12,41 @@ import (
     "sync"
     "sync/atomic"
     "math/rand"
+    "math"
+
 )
 
 type KinesisOutput struct {
-    batchesSent         int64
-    batchesFailed       int64
-    processMessageCount int64
-    dropMessageCount    int64
-    recordCount         int64
-    retryCount          int64
-    reportLock          sync.Mutex
-    flushLock           sync.Mutex
-    config              *KinesisOutputConfig
-    Client              *kin.Kinesis
-    awsConf             *aws.Config
-    batchedData         []byte
-    batchedEntries      []*kin.PutRecordsRequestEntry
+    batchesSent                     int64
+    batchesFailed                   int64
+    processMessageCount             int64
+    dropMessageCount                int64
+    recordCount                     int64
+    retryCount                      int64
+    reportLock                      sync.Mutex
+    flushLock                       sync.Mutex
+    config                          *KinesisOutputConfig
+    Client                          *kin.Kinesis
+    awsConf                         *aws.Config
+    batchedData                     []byte
+    batchedEntries                  []*kin.PutRecordsRequestEntry
+    KINESIS_SHARDS                  int
+    KINESIS_RECORD_SIZE             int
+    KINESIS_SHARD_CAPACITY          int
+    KINESIS_PUT_RECORDS_SIZE_LIMIT  int
+    KINESIS_PUT_RECORDS_BATCH_SIZE  int
 }
 
 type KinesisOutputConfig struct {
-    Region          string `toml:"region"`
-    Stream          string `toml:"stream"`
-    AccessKeyID     string `toml:"access_key_id"`
-    SecretAccessKey string `toml:"secret_access_key"`
-    Token           string `toml:"token"`
-    PayloadOnly     bool   `toml:"payload_only"`
+    Region            string `toml:"region"`
+    Stream            string `toml:"stream"`
+    AccessKeyID       string `toml:"access_key_id"`
+    SecretAccessKey   string `toml:"secret_access_key"`
+    Token             string `toml:"token"`
+    PayloadOnly       bool   `toml:"payload_only"`
+    BackoffIncrement  int    `toml:"backoff_increment"`
+    MaxRetries        int    `toml:"max_retries"`
+    KinesisShardCount int    `toml:"kinesis_shard_count"`
 }
 
 func (k *KinesisOutput) ConfigStruct() interface{} {
@@ -49,14 +59,6 @@ func (k *KinesisOutput) ConfigStruct() interface{} {
     }
 }
 
-const BACKOFF_INCREMENT = 250 // millis
-const MAX_RETRIES = 30
-
-const KINESIS_SHARDS = 32
-const KINESIS_RECORD_SIZE = (100 * 1024) // 100 KB
-const KINESIS_SHARD_CAPACITY = KINESIS_SHARDS * 1024 * 1024
-const KINESIS_PUT_RECORDS_SIZE_LIMIT = math.min(KINESIS_SHARD_CAPACITY, 5 * 1024 * 1024) // 5 MB;
-const KINESIS_PUT_RECORDS_BATCH_SIZE = math.max(1, math.floor(KINESIS_PUT_RECORDS_SIZE_LIMIT / KINESIS_RECORD_SIZE) - 1)
 // const KINESIS_PARALLEL_PUT_LIMIT = Math.floor(KINESIS_SHARD_CAPACITY / KINESIS_PUT_RECORDS_SIZE_LIMIT);
 
 
@@ -64,7 +66,8 @@ func init() {
     pipeline.RegisterPlugin("KinesisOutput", func() interface{} { return new(KinesisOutput) })
 }
 
-func (k *KinesisOutput) InitAWS() aws.Config {
+func (k *KinesisOutput) InitAWS() *aws.Config {
+    var creds *credentials.Credentials
 
     if k.config.AccessKeyID != "" && k.config.SecretAccessKey != "" {
         creds = credentials.NewStaticCredentials(k.config.AccessKeyID, k.config.SecretAccessKey, "")
@@ -78,9 +81,22 @@ func (k *KinesisOutput) InitAWS() aws.Config {
 }
 
 func (k *KinesisOutput) Init(config interface{}) error {
-    var creds *credentials.Credentials
-
     k.config = config.(*KinesisOutputConfig)
+
+    if (k.config.BackoffIncrement == 0) {
+        k.config.BackoffIncrement = 250
+    }
+
+    if (k.config.MaxRetries == 0) {
+        k.config.MaxRetries = 30
+    }
+
+    k.KINESIS_SHARDS = k.config.KinesisShardCount
+    k.KINESIS_RECORD_SIZE = (100 * 1024) // 100 KB
+    k.KINESIS_SHARD_CAPACITY = KINESIS_SHARDS * 1024 * 1024
+    k.KINESIS_PUT_RECORDS_SIZE_LIMIT = math.min(KINESIS_SHARD_CAPACITY, 5 * 1024 * 1024) // 5 MB;
+    k.KINESIS_PUT_RECORDS_BATCH_SIZE = math.max(1, math.floor(KINESIS_PUT_RECORDS_SIZE_LIMIT / KINESIS_RECORD_SIZE) - 1)
+
     k.batchedData = []byte {}
     k.batchedEntries = []*kin.PutRecordsRequestEntry {}
 
@@ -107,12 +123,14 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
         atomic.AddInt64(&k.batchesFailed, 1)
         atomic.AddInt64(&k.dropMessageCount, int64(len(entries)))
 
-        if (retries <= MAX_RETRIES) {
+        if (retries <= k.config.MaxRetries) {
             atomic.AddInt64(&k.retryCount, 1)
-            time.Sleep(time.Millisecond * backoff)
-            k.SendEntries(or, entries, backoff + BACKOFF_INCREMENT, retries + 1)    
+            time.Sleep(time.Millisecond * time.Duration(backoff))
+            k.SendEntries(or, entries, backoff + k.config.BackoffIncrement, retries + 1)
         } else {
-            or.LogError(fmt.Errorf("Batch: Hit max retries when attempting to send data"))
+            if (or != nil) {
+                or.LogError(fmt.Errorf("Batch: Hit max retries when attempting to send data"))
+            }
         }
     }
 
@@ -121,7 +139,7 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
     return nil
 }
 
-func (k *KinesisOutput) PrepareSend(entries []*kin.PutRecordsRequestEntry) {
+func (k *KinesisOutput) PrepareSend(or pipeline.OutputRunner, *entries []*kin.PutRecordsRequestEntry) {
     // clone the entries so the output can happen
     clonedEntries := make([]*kin.PutRecordsRequestEntry, len(entries))
     copy(clonedEntries, entries)
@@ -130,7 +148,7 @@ func (k *KinesisOutput) PrepareSend(entries []*kin.PutRecordsRequestEntry) {
     go k.SendEntries(or, clonedEntries, 0, 0)
 }
 
-func (k *KinesisOutput) BundleMessage(msg []byte) kin.PutRecordsRequestEntry {
+func (k *KinesisOutput) BundleMessage(msg []byte) *kin.PutRecordsRequestEntry {
     // define a Partition Key
     pk := fmt.Sprintf("%X", rand.Int())
 
@@ -147,7 +165,7 @@ func (k *KinesisOutput) AddToRecordBatch(msg []byte) {
     tmp := append(k.batchedEntries, entry)
 
     // if we have hit the batch limit, send.
-    if (len(tmp) > KINESIS_PUT_RECORDS_BATCH_SIZE) {
+    if (len(tmp) > k.KINESIS_PUT_RECORDS_BATCH_SIZE) {
         k.PrepareSend(k.batchedEntries)
         k.batchedEntries = []*kin.PutRecordsRequestEntry { entry }
     } else {
@@ -185,7 +203,7 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     }
 
     // if we can't fit the data in this record
-    if (len(tmp) > KINESIS_RECORD_SIZE) {
+    if (len(tmp) > k.KINESIS_RECORD_SIZE) {
         // add the existing data to the output batch
         array := append([]byte("["), k.batchedData, []byte("]"))
         k.AddToRecordBatch(array)
