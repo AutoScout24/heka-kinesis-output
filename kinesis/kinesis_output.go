@@ -197,7 +197,7 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     var tmp []byte
     // if we already have data then we should append.
     if (len(k.batchedData) > 0) {
-        tmp = append(k.batchedData, byte(","), msg...)
+        tmp = append(append(k.batchedData, []byte(",")...), msg...)
     } else {
         tmp = msg
     }
@@ -205,7 +205,7 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     // if we can't fit the data in this record
     if (len(tmp) > k.KINESIS_RECORD_SIZE) {
         // add the existing data to the output batch
-        array := append(append([]byte("["), k.batchedData...), byte("]"))
+        array := append(append([]byte("["), k.batchedData...), []byte("]")...)
         k.AddToRecordBatch(or, array)
 
         // update the batched data to only contain the current message.
