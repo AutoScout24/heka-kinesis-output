@@ -258,7 +258,7 @@ func (k *KinesisOutput) FlushData() {
     k.flushLock.Lock()
     defer k.flushLock.Unlock()
 
-    array := append([]byte("["), k.batchedData, []byte("]"))
+    array := append(append([]byte("["), k.batchedData...), []byte("]")...)
     entry := k.BundleMessage(array)
 
     k.PrepareSend(nil, append(k.batchedEntries, entry))
