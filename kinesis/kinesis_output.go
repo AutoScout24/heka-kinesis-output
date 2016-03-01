@@ -262,7 +262,7 @@ func (k *KinesisOutput) HandleTick(ticker <-chan time.Time) {
         select {
             case time := <-ticker:
                 k.TimerEvent(time)
-            case shouldStop := <-k.tickerStop:
+            case _ := <-k.tickerStop:
                 break
         }
     }
