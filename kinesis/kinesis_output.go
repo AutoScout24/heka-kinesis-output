@@ -284,10 +284,12 @@ func (k *KinesisOutput) ReportMsg(msg *message.Message) error {
 }
 
 func (k *KinesisOutput) TimerEvent() error {
-    if(!hasTriedToSend) {
+    if(!k.hasTriedToSend) {
         k.FlushData()
     }
-    hasTriedToSend = false
+    k.hasTriedToSend = false
+
+    return nil
 }
 
 func (k *KinesisOutput) FlushData() {
