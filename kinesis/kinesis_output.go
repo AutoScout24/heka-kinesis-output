@@ -136,7 +136,6 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
             or.LogError(fmt.Errorf("Batch: Error pushing message to Kinesis: %s", err))
         }
         atomic.AddInt64(&k.batchesFailed, 1)
-        atomic.AddInt64(&k.dropMessageCount, int64(len(entries)))
 
         if (retries <= k.config.MaxRetries || k.config.MaxRetries == -1) {
             atomic.AddInt64(&k.retryCount, 1)
@@ -153,6 +152,7 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
             time.Sleep(backoff + k.backoffIncrement)
             k.SendEntries(or, retryEntries, backoff + k.backoffIncrement, retries + 1)
         } else {
+            atomic.AddInt64(&k.dropMessageCount, int64(len(entries)))
             if (or != nil) {
                 or.LogError(fmt.Errorf("Batch: Hit max retries when attempting to send data"))
             }
