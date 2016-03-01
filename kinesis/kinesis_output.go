@@ -146,17 +146,19 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
         if (retries <= k.config.MaxRetries || k.config.MaxRetries == -1) {
             atomic.AddInt64(&k.retryCount, 1)
 
+            time.Sleep(backoff + k.backoffIncrement)
+
             // filter down to only the failed records:
             retryEntries := []*kin.PutRecordsRequestEntry {}
             for i, entry := range entries {
                 response := data.Records[i]
                 if (response.ErrorCode != nil) {
-                    entry.PartitionKey = fmt.Sprintf("%d", rand.Int63())
+                    // incase we are rate limited push the entry to a new shard.
+                    entry.PartitionKey = aws.String(fmt.Sprintf("%d", rand.Int63()))
                     retryEntries = append(retryEntries, entry)
                 }
             }
 
-            time.Sleep(backoff + k.backoffIncrement)
             k.SendEntries(or, retryEntries, backoff + k.backoffIncrement, retries + 1)
         } else {
             atomic.AddInt64(&k.dropMessageCount, int64(len(entries)))
