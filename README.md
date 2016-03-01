@@ -15,18 +15,14 @@ If you do not need all of the plugins from this repository, you can specify spec
 add_external_plugin(git https://github.com/MattLTW/heka-plugins master)
 ```
 
-## Kinesis
+## Detail
 This output will put your [heka][1] messages and put them into a [Kinesis][2] stream. It will do this in batches.
-
-This plugin batches in two stages. First it batches multiple messages in a single Kinesis record entry. Each Message will be placed into a JSON array inside a single record. The size of the array depends upon the `kinesis_record_size` parameter. Next it will batch multiple Record Entries in to a single Kinesis.PutRecords command.
 
 > **Note:** This plugin expects that your message encoder, encodes as JSON.
 
-The plugin will build record entries up until the record size exceeds 100KB. It will then buffer an entry just smaller than 100KB.
+This plugin batches in two stages. First it batches multiple messages in a single Kinesis record entry. Each Message will be placed into a JSON array inside a single record. The plugin will build log entries up until the record size exceeds `kinesis_record_size` (100KB). 
 
-Once we have at most 5MB of data (less depending upon your number of kinesis shards) we send the data through to kinesis asynchronously.
-
-Each batch can be [at most 5M and individual messages can be at most 1M][4]. 
+It will then build the record and place it in a buffer to be sent out. Once we have at most 5MB of data (less depending upon your number of kinesis shards) we send the data through to kinesis asynchronously. Each batch can be [at most 5M and individual messages can be at most 1M][4]. 
 
 > **Note** Batching will only be sent once 5MB (or your max for your shard count) has been reached. Therefore it is only really applicable to high frequency messages. **This plugin will introduce latency in to your logs.**
 
@@ -55,7 +51,7 @@ If you choose to leave your access key and secret access key out then it will in
 `kinesis_record_size` - The desired size of individual kinesis records. Default `102400` (100KB)
 
 
-Example configuration
+## Example configuration:
 
 ```ini
 [KinesisOut]

@@ -61,9 +61,6 @@ func (k *KinesisOutput) ConfigStruct() interface{} {
     }
 }
 
-// const KINESIS_PARALLEL_PUT_LIMIT = Math.floor(KINESIS_SHARD_CAPACITY / KINESIS_PUT_RECORDS_SIZE_LIMIT);
-
-
 func init() {
     pipeline.RegisterPlugin("KinesisOutput", func() interface{} { return new(KinesisOutput) })
 }
@@ -131,7 +128,7 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
         StreamName:   aws.String(k.config.Stream),
     }
 
-    _, err := k.Client.PutRecords(multParams)
+    data, err := k.Client.PutRecords(multParams)
     
     // Update statistics & handle errors
     if err != nil {
@@ -143,8 +140,18 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
 
         if (retries <= k.config.MaxRetries || k.config.MaxRetries == -1) {
             atomic.AddInt64(&k.retryCount, 1)
+
+            // filter down to only the failed records:
+            retryEntries := []*kin.PutRecordsRequestEntry {}
+            for i, entry := range entries {
+                response := data.Records[i]
+                if (response.ErrorCode != nil) {
+                    retryEntries = append(retryEntries, entry)
+                }
+            }
+
             time.Sleep(backoff + k.backoffIncrement)
-            k.SendEntries(or, entries, backoff + k.backoffIncrement, retries + 1)
+            k.SendEntries(or, retryEntries, backoff + k.backoffIncrement, retries + 1)
         } else {
             if (or != nil) {
                 or.LogError(fmt.Errorf("Batch: Hit max retries when attempting to send data"))
@@ -168,7 +175,7 @@ func (k *KinesisOutput) PrepareSend(or pipeline.OutputRunner, entries []*kin.Put
 
 func (k *KinesisOutput) BundleMessage(msg []byte) *kin.PutRecordsRequestEntry {
     // define a Partition Key
-    pk := fmt.Sprintf("%X", rand.Int())
+    pk := fmt.Sprintf("%X", rand.Int63())
 
     // Add things to the current batch.
     return &kin.PutRecordsRequestEntry {
@@ -299,4 +306,14 @@ func (k *KinesisOutput) CleanupForRestart() {
     atomic.StoreInt64(&k.batchesFailed, 0)
     atomic.StoreInt64(&k.recordCount, 0)
     atomic.StoreInt64(&k.retryCount, 0)
+}
+
+func Filter(vs []string, f func(string) bool) []string {
+    vsf := make([]string, 0)
+    for _, v := range vs {
+        if f(v) {
+            vsf = append(vsf, v)
+        }
+    }
+    return vsf
 }
