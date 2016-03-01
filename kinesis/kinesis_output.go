@@ -291,7 +291,7 @@ func (k *KinesisOutput) ReportMsg(msg *message.Message) error {
     return nil
 }
 
-func (k *KinesisOutput) TimerEvent() error {
+func (k *KinesisOutput) TimerEvent() (err error) {
     atomic.AddInt64(&k.tickerActivations, 1)
 
     if(!k.hasTriedToSend) {
