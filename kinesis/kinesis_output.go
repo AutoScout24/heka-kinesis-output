@@ -36,6 +36,7 @@ type KinesisOutput struct {
     KINESIS_SHARD_CAPACITY          int
     KINESIS_PUT_RECORDS_SIZE_LIMIT  int
     KINESIS_PUT_RECORDS_BATCH_SIZE  int
+    hasTriedToSend                  bool
 }
 
 type KinesisOutputConfig struct {
@@ -123,6 +124,9 @@ func (k *KinesisOutput) Init(config interface{}) error {
 }
 
 func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.PutRecordsRequestEntry, backoff time.Duration, retries int) error {
+
+    k.hasTriedToSend = true
+
     multParams := &kin.PutRecordsInput{
         Records:      entries,
         StreamName:   aws.String(k.config.Stream),
@@ -279,6 +283,13 @@ func (k *KinesisOutput) ReportMsg(msg *message.Message) error {
     return nil
 }
 
+func (k *KinesisOutput) TimerEvent() error {
+    if(!hasTriedToSend) {
+        k.FlushData()
+    }
+    hasTriedToSend = false
+}
+
 func (k *KinesisOutput) FlushData() {
     k.flushLock.Lock()
     defer k.flushLock.Unlock()
@@ -287,6 +298,7 @@ func (k *KinesisOutput) FlushData() {
     entry := k.BundleMessage(array)
 
     k.PrepareSend(nil, append(k.batchedEntries, entry))
+    k.batchedEntries = []*kin.PutRecordsRequestEntry { }
 }
 
 func (k *KinesisOutput) CleanupForRestart() {
@@ -306,14 +318,4 @@ func (k *KinesisOutput) CleanupForRestart() {
     atomic.StoreInt64(&k.batchesFailed, 0)
     atomic.StoreInt64(&k.recordCount, 0)
     atomic.StoreInt64(&k.retryCount, 0)
-}
-
-func Filter(vs []string, f func(string) bool) []string {
-    vsf := make([]string, 0)
-    for _, v := range vs {
-        if f(v) {
-            vsf = append(vsf, v)
-        }
-    }
-    return vsf
 }
