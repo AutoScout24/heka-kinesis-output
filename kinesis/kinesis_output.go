@@ -23,6 +23,8 @@ type KinesisOutput struct {
     dropMessageCount                int64
     recordCount                     int64
     retryCount                      int64
+    flushCount                      int64
+    tickerActivations               int64
     reportLock                      sync.Mutex
     flushLock                       sync.Mutex
     config                          *KinesisOutputConfig
@@ -149,6 +151,7 @@ func (k *KinesisOutput) SendEntries(or pipeline.OutputRunner, entries []*kin.Put
             for i, entry := range entries {
                 response := data.Records[i]
                 if (response.ErrorCode != nil) {
+                    entry.PartitionKey = fmt.Sprintf("%d", rand.Int63())
                     retryEntries = append(retryEntries, entry)
                 }
             }
@@ -179,7 +182,7 @@ func (k *KinesisOutput) PrepareSend(or pipeline.OutputRunner, entries []*kin.Put
 
 func (k *KinesisOutput) BundleMessage(msg []byte) *kin.PutRecordsRequestEntry {
     // define a Partition Key
-    pk := fmt.Sprintf("%X", rand.Int63())
+    pk := fmt.Sprintf("%d", rand.Int63())
 
     // Add things to the current batch.
     return &kin.PutRecordsRequestEntry {
@@ -279,11 +282,16 @@ func (k *KinesisOutput) ReportMsg(msg *message.Message) error {
     message.NewInt64Field(msg, "RecordCount", atomic.LoadInt64(&k.recordCount), "count")
 
     message.NewInt64Field(msg, "RetryCount", atomic.LoadInt64(&k.retryCount), "count")
+
+    message.NewInt64Field(msg, "FlushCount", atomic.LoadInt64(&k.flushCount), "count")
+    message.NewInt64Field(msg, "tickerActivations", atomic.LoadInt64(&k.tickerActivations), "count")
     
     return nil
 }
 
 func (k *KinesisOutput) TimerEvent() error {
+    atomic.AddInt64(&k.tickerActivations, 1)
+
     if(!k.hasTriedToSend) {
         k.FlushData()
     }
@@ -293,6 +301,7 @@ func (k *KinesisOutput) TimerEvent() error {
 }
 
 func (k *KinesisOutput) FlushData() {
+    atomic.AddInt64(&k.flushCount, 1)
     k.flushLock.Lock()
     defer k.flushLock.Unlock()
 
@@ -320,4 +329,6 @@ func (k *KinesisOutput) CleanupForRestart() {
     atomic.StoreInt64(&k.batchesFailed, 0)
     atomic.StoreInt64(&k.recordCount, 0)
     atomic.StoreInt64(&k.retryCount, 0)
+    atomic.StoreInt64(&k.flushCount, 0)
+    atomic.StoreInt64(&k.tickerActivations, 0)
 }

@@ -50,6 +50,8 @@ If you choose to leave your access key and secret access key out then it will in
 
 `kinesis_record_size` - The desired size of individual kinesis records. Default `102400` (100KB)
 
+`ticker_interval` - The time (in seconds) that the plugin will attempt to flush the buffers. Useful on low frequency streams that need to be kept up to date. If the plugin has tried to attempt to send data within that timer then it will skip the flush.
+
 
 ## Example configuration:
 
