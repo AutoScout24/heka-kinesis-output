@@ -39,6 +39,7 @@ type KinesisOutput struct {
     KINESIS_PUT_RECORDS_SIZE_LIMIT  int
     KINESIS_PUT_RECORDS_BATCH_SIZE  int
     hasTriedToSend                  bool
+    tickerStop                      chan bool
 }
 
 type KinesisOutputConfig struct {
@@ -256,12 +257,26 @@ func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.P
     return nil
 }
 
+func (k *KinesisOutput) HandleTick(ticker <-chan time.Time) {
+    for {
+        select {
+            case time := <-ticker:
+                k.TimerEvent(time)
+            case shouldStop := <-k.tickerStop
+                break
+        }
+    }
+}
+
 func (k *KinesisOutput) Run(or pipeline.OutputRunner, helper pipeline.PluginHelper) error {
     var pack *pipeline.PipelinePack
 
     if or.Encoder() == nil {
         return fmt.Errorf("Encoder required.")
     }
+
+    // Handle the ticks from the Ticker asyncronously
+    go k.HandleTick(or.Ticker())
 
     // handle packages
     for pack = range or.InChan() {
@@ -291,7 +306,9 @@ func (k *KinesisOutput) ReportMsg(msg *message.Message) error {
     return nil
 }
 
-func (k *KinesisOutput) TimerEvent() (err error) {
+// This isn't actually ran by the Heka environment.
+// Instead the Ticker property on Output Runner triggers it.
+func (k *KinesisOutput) TimerEvent(time time.Time) (err error) {
     atomic.AddInt64(&k.tickerActivations, 1)
 
     if(!k.hasTriedToSend) {
@@ -318,6 +335,9 @@ func (k *KinesisOutput) CleanupForRestart() {
 
     // force flush all messages in memory.
     k.FlushData()
+
+    k.tickerStop <- true
+    close(k.tickerStop)
 
     k.batchedData = []byte {}
     k.batchedEntries = []*kin.PutRecordsRequestEntry {}
