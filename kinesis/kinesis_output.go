@@ -103,8 +103,8 @@ func (k *KinesisOutput) Init(config interface{}) error {
         return fmt.Errorf("Please supply the value kinesis_shard_count")
     }
 
-    if (k.config.KinesisRecordSize > (1000 * 1024)) {
-        return fmt.Errorf("Your kinesis_record_size must be less than 1M. See https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method")
+    if (k.config.KinesisRecordSize > (1024 * 1024)) {
+        return fmt.Errorf("Your kinesis_record_size must be less than 1M (1048576 Bytes). See https://docs.aws.amazon.com/sdk-for-go/api/service/kinesis/Kinesis.html#PutRecords-instance_method")
     } else if (k.config.KinesisRecordSize == 0) {
         k.config.KinesisRecordSize = (100 * 1024) // 100 KB
     }
@@ -212,6 +212,8 @@ func (k *KinesisOutput) AddToRecordBatch(or pipeline.OutputRunner, msg []byte) {
 }
 
 func (k *KinesisOutput) HandlePackage(or pipeline.OutputRunner, pack *pipeline.PipelinePack) error {
+
+    // If we are flushing, wait until we have finished.
     k.flushLock.Lock()
     defer k.flushLock.Unlock()
 
@@ -311,9 +313,12 @@ func (k *KinesisOutput) ReportMsg(msg *message.Message) error {
 func (k *KinesisOutput) TimerEvent(time time.Time) (err error) {
     atomic.AddInt64(&k.tickerActivations, 1)
 
+    // if we haven't tried to send data in the last time batch
+    // try to flush it manually now.
     if(!k.hasTriedToSend) {
         k.FlushData()
     }
+
     k.hasTriedToSend = false
 
     return nil
@@ -336,14 +341,15 @@ func (k *KinesisOutput) CleanupForRestart() {
     // force flush all messages in memory.
     k.FlushData()
 
+    // Tell the ticker to stop
     k.tickerStop <- true
     close(k.tickerStop)
 
-    k.batchedData = []byte {}
-    k.batchedEntries = []*kin.PutRecordsRequestEntry {}
-
     k.reportLock.Lock()
     defer k.reportLock.Unlock()
+    
+    k.batchedData = []byte {}
+    k.batchedEntries = []*kin.PutRecordsRequestEntry {}
 
     atomic.StoreInt64(&k.processMessageCount, 0)
     atomic.StoreInt64(&k.dropMessageCount, 0)

@@ -24,7 +24,9 @@ This plugin batches in two stages. First it batches multiple messages in a singl
 
 It will then build the record and place it in a buffer to be sent out. Once we have at most 5MB of data (less depending upon your number of kinesis shards) we send the data through to kinesis asynchronously. Each batch can be [at most 5M and individual messages can be at most 1M][4]. 
 
-> **Note** Batching will only be sent once 5MB (or your max for your shard count) has been reached. Therefore it is only really applicable to high frequency messages. **This plugin will introduce latency in to your logs.**
+> **Note:** Batching will be sent once 5MB (or your max for your shard count) has been reached.
+
+You can set the `ticker_interval` parameter allows you to flush more regularly if your data takes a while to reach 5MB.
 
 If you choose to leave your access key and secret access key out then it will inherit the EC2 role credentials.
 
@@ -32,11 +34,11 @@ If you choose to leave your access key and secret access key out then it will in
 
 \* - Required parameters
 
-`region`* - The AWS region your kinesis stream is in. 
+`region*` - The AWS region your kinesis stream is in. 
 
-`stream`* - The name of your kinesis stream.
+`stream*` - The name of your kinesis stream.
 
-`kinesis_shard_count`* - The number of Kinesis shards your stream is using. This is used to work out the maximum number of records your stream can handle.
+`kinesis_shard_count*` - The number of Kinesis shards your stream is using. This is used to work out the maximum number of records your stream can handle.
 
 `access_key_id` - Your AWS Key ID.
 
@@ -50,7 +52,7 @@ If you choose to leave your access key and secret access key out then it will in
 
 `kinesis_record_size` - The desired size of individual kinesis records. Default `102400` (100KB)
 
-`ticker_interval` - The time (in seconds) that the plugin will attempt to flush the buffers. Useful on low frequency streams that need to be kept up to date. If the plugin has tried to attempt to send data within that timer then it will skip the flush.
+`ticker_interval` - The time (in seconds) that the plugin will attempt to flush the buffers. Useful on low frequency streams that need to be kept up to date. If the plugin has tried to attempt to send data within that timer then it will skip the flush. If left blank this flush functionality is disabled.
 
 
 ## Example configuration:
@@ -70,6 +72,7 @@ payload_only = false
 max_retries = -1
 backoff_increment = "500ms"
 kinesis_record_size = 256000 # 256Kb
+ticker_interval = 5
 ```
 
   [1]: https://hekad.readthedocs.org/en/latest/index.html
