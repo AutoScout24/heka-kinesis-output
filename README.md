@@ -9,18 +9,19 @@ git_clone(https://github.com/vaughan0/go-ini a98ad7ee00ec53921f08832bc06ecf7fd60
 git_clone(https://github.com/aws/aws-sdk-go 90a21481e4509c85ee68b908c72fe4b024311447)
 add_dependencies(aws-sdk-go go-ini)
 ```
-
-If you do not need all of the plugins from this repository, you can specify specific ones:
+You can then specify the Kinesis output plugin:
 ```bash
-add_external_plugin(git https://github.com/MattLTW/heka-plugins master)
+add_external_plugin(git https://github.com/MattLTW/heka-kinesis-output master)
 ```
 
 ## Detail
-This output will put your [heka][1] messages and put them into a [Kinesis][2] stream. It will do this in batches.
+This output will put your [heka][1] messages and put them into a [Kinesis][2] stream. It will do this in batches. It is designed to batch the content in to the largest possible single put records request. This allows for the highest possible throughput with the least amount of push overhead.
+
+This plugin batches in two stages. First it batches multiple messages in a single Kinesis record entry. Each Message will be placed into a JSON array inside a single record. 
 
 > **Note:** This plugin expects that your message encoder, encodes as JSON.
 
-This plugin batches in two stages. First it batches multiple messages in a single Kinesis record entry. Each Message will be placed into a JSON array inside a single record. The plugin will build log entries up until the record size exceeds `kinesis_record_size` (100KB). 
+The plugin will build log entries up until the record size exceeds `kinesis_record_size` (100KB). 
 
 It will then build the record and place it in a buffer to be sent out. Once we have at most 5MB of data (less depending upon your number of kinesis shards) we send the data through to kinesis asynchronously. Each batch can be [at most 5M and individual messages can be at most 1M][4]. 
 
