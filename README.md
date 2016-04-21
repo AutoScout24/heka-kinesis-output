@@ -11,7 +11,7 @@ add_dependencies(aws-sdk-go go-ini)
 ```
 You can then specify the Kinesis output plugin:
 ```bash
-add_external_plugin(git https://github.com/MattLTW/heka-kinesis-output master)
+add_external_plugin(git https://github.com/autoscout24/heka-kinesis-output master)
 ```
 
 ## Detail
