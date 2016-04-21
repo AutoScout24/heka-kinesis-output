@@ -1,5 +1,5 @@
 package plugins
 
 import (
-	_ "github.com/AutoScout24/heka-kinesis-output/kinesis"
+	_ "github.com/AutoScout24/heka-kinesis-output.git/kinesis"
 )
