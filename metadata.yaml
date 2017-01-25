@@ -1,0 +1,7 @@
+service:     "heka-kinesis-output"
+usecase:     "uicomposition"
+segment:     "platform-engineering"
+vertical:    "s24"
+owner:       "Horus"
+team:        "S24_Horus"
+criticality: "gold"
