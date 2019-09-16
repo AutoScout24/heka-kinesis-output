@@ -1,7 +1,10 @@
-service:     "heka-kinesis-output"
-usecase:     "uicomposition"
-segment:     "platform-engineering"
-vertical:    "s24"
-owner:       "S24-PlatformEngineering-SRE-TREN-ds@scout24.com"
-team:        "traffic-engineering"
-criticality: "gold"
+type: application
+owners:
+  - S24-PlatformEngineering-SRE-TREN-ds@scout24.com
+product: uicomposition
+id: heka-kinesis-output
+vertical: s24
+availability: true
+confidentiality: company-internal
+integrity: true
+lifecycle: ga
